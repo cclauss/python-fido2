@@ -36,12 +36,35 @@ from ..webauthn import (
     PublicKeyCredentialCreationOptions,
     PublicKeyCredentialRequestOptions,
     AuthenticatorSelectionCriteria,
+    AttestationObject,
 )
+from .. import cbor
 from enum import Enum, unique
 from dataclasses import dataclass
 from typing import Dict, Tuple, Any, Optional, Mapping
 import abc
 import warnings
+
+
+class ClientExtensionOutputs(Mapping[str, Any]):
+    def __init__(self, outputs: Mapping[str, Any]):
+        self._members = {k: v for k, v in outputs.items() if v is not None}
+
+    def __iter__(self):
+        return iter(self._members)
+
+    def __len__(self):
+        return len(self._members)
+
+    def __getitem__(self, key):
+        value = self._members[key]
+        return dict(value) if isinstance(value, Mapping) else value
+
+    def __getattr__(self, key):
+        return self._members.get(key)
+
+    def __repr__(self):
+        return repr(dict(self))
 
 
 class Ctap2Extension(abc.ABC):
@@ -415,22 +438,86 @@ class CredPropsExtension(Ctap2Extension):
         return {"credProps": _CredPropsOutputs(rk=rk)}
 
 
-class ClientExtensionOutputs(Mapping[str, Any]):
-    def __init__(self, outputs: Mapping[str, Any]):
-        self._members = {k: v for k, v in outputs.items() if v is not None}
+class SignExtension(Ctap2Extension):
+    """
+    Implements the sign CTAP2 extension.
+    """
 
-    def __iter__(self):
-        return iter(self._members)
+    NAME = "sign"
 
-    def __len__(self):
-        return len(self._members)
+    def process_create_input(self, inputs):
+        data = inputs.get("sign", {})
+        if not data or not self.is_supported():
+            return
 
-    def __getitem__(self, key):
-        value = self._members[key]
-        return dict(value) if isinstance(value, Mapping) else value
+        if "sign" in data or "generateKey" not in data:
+            raise ValueError("Invalid inputs")
 
-    def __getattr__(self, key):
-        return self._members.get(key)
+        gk = data["generateKey"]
+        """
+        phData = 0
+        kty = 1
+        kid = 2
+        alg = 3
+        flags = 4
+        key-refs = 5
+        sig = 6
+        att-obj = 7
+        """
 
-    def __repr__(self):
-        return repr(dict(self))
+        outputs = {
+            3: gk["algorithms"],
+            4: 0b101,  # TODO: 0b001 if UV not "required"
+        }
+
+        if "phData" in gk:
+            outputs[0] = gk["phData"]
+
+        return outputs
+
+    def process_create_output(self, attestation_response, *args):
+        data = attestation_response.auth_data.extensions.get(self.NAME)
+        att_obj = AttestationObject(data[7])
+        cred_data = att_obj.auth_data.credential_data
+        assert cred_data is not None  # nosec
+        pk = cred_data.public_key
+        kh = cbor.encode({k: pk[k] for k in (1, 2, 3) if k in pk})
+
+        output = {
+            "generatedKey": {
+                "publicKey": cbor.encode(pk),
+                "keyHandle": kh,
+            }
+        }
+
+        if 6 in data:
+            output["signature"] = data[6]
+
+        return {"sign": output}
+
+    def process_get_input(self, inputs):
+        data = inputs.get("sign", {})
+        if not data or not self.is_supported():
+            return
+
+        if "sign" not in data or "generateKey" in data:
+            raise ValueError("Invalid inputs")
+
+        allow_list = self._get_options.allow_credentials
+        if not allow_list:
+            raise ValueError("None or empty allowCredential")
+
+        sign = data["sign"]
+        kh_map = sign["keyHandleByCredential"]
+        # We may have more keys, as allow_list has been filtered
+        khs = [kh_map[websafe_encode(cred.id)] for cred in allow_list]
+
+        return {
+            0: sign["phData"],
+            5: khs,
+        }
+
+    def process_get_output(self, assertion_response, *args):
+        data = assertion_response.auth_data.extensions.get(self.NAME)
+
+        return {"sign": {"signature": data[6]}}
