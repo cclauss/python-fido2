@@ -1,6 +1,32 @@
-from .cose import CoseKey
+# Copyright (c) 2024 Yubico AB
+# All rights reserved.
+#
+#   Redistribution and use in source and binary forms, with or
+#   without modification, are permitted provided that the following
+#   conditions are met:
+#
+#    1. Redistributions of source code must retain the above copyright
+#       notice, this list of conditions and the following disclaimer.
+#    2. Redistributions in binary form must reproduce the above
+#       copyright notice, this list of conditions and the following
+#       disclaimer in the documentation and/or other materials provided
+#       with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+# FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+# COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+# INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+# BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+# LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+# ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+from .cose import CoseKey, ES256
 from .utils import int2bytes, bytes2int
-from . import cbor
 
 from cryptography.hazmat.primitives.hashes import SHA256, Hash, HashAlgorithm
 from cryptography.hazmat.primitives.hmac import HMAC
@@ -337,9 +363,25 @@ def _cose2point(cose):
     return SEC1Encoder.decode_public_key(b"\x04" + cose[-2] + cose[-3], P256)
 
 
+class ARKG_P256_DERIVED(ES256):
+    def __init__(self, *args, parent_kid: bytes, kh: bytes, info: bytes, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._parent_kid = parent_kid
+        self._kh = kh
+        self._info = info
+
+    def get_ref(self):
+        return {
+            1: -65538,  # kty: Ref-ARKG-derived
+            2: self._parent_kid,
+            3: ARKG_P256ADD_ECDH.ALGORITHM,
+            -1: self._kh,
+            -2: self._info,
+        }
+
+
 class ARKG_P256ADD_ECDH(CoseKey):
     ALGORITHM = -65539
-    _HASH_ALG = SHA256()
     _ARKG = ARKG(
         bl=BL(crv=P256, Hash=SHA256, DST_ext=b"ARKG-P256ADD-ECDH"),
         kem=KEM(crv=P256, Hash=SHA256, DST_ext=b"ARKG-P256ADD-ECDH"),
@@ -353,32 +395,21 @@ class ARKG_P256ADD_ECDH(CoseKey):
     def kem_key(self) -> CoseKey:
         return CoseKey.parse(self[-2])
 
-    def derive_public_key(self, info: bytes) -> Tuple[CoseKey, bytes]:
+    def derive_public_key(self, info: bytes) -> CoseKey:
         point, kh = self._ARKG.derive_public_key(
             _cose2point(self.kem_key),
             _cose2point(self.blinding_key),
             info,
         )
-        pk = CoseKey.parse(
+        return ARKG_P256_DERIVED(
             {
                 1: 2,
                 3: -7,
                 -1: 1,
                 -2: int2bytes(point.x, 32),
                 -3: int2bytes(point.y, 32),
-            }
+            },
+            parent_kid=self[2],
+            kh=kh,
+            info=info,
         )
-
-        # Return the complete COSE key ref used as key handle to getAssertion
-        ref = dict(self.get_key_handle())
-        ref.update(
-            {
-                1: -65538,  # kty: Ref-ARKG-derived
-                -1: kh,
-                -2: info,
-            }
-        )
-
-        ref_kh = cbor.encode(ref)
-
-        return pk, ref_kh

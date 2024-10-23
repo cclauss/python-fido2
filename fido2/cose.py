@@ -43,7 +43,7 @@ class CoseKey(dict):
 
     ALGORITHM: int = None  # type: ignore
 
-    def get_key_handle(self) -> Mapping[int, Any]:
+    def get_ref(self) -> Mapping[int, Any]:
         """Returns a COSE Key Reference for the key."""
         return {k: self[k] for k in (1, 2, 3) if k in self}
 
@@ -125,8 +125,8 @@ class ES256(CoseKey):
     ALGORITHM = -7
     _HASH_ALG = hashes.SHA256()
 
-    def get_key_handle(self):
-        kh = dict(super().get_key_handle())
+    def get_ref(self):
+        kh = dict(super().get_ref())
         kh[1] = -2  # Ref-EC2
         return kh
 
