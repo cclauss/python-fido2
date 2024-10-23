@@ -484,7 +484,7 @@ class SignExtension(Ctap2Extension):
         output = {
             "generatedKey": {
                 "publicKey": cbor.encode(pk),
-                "keyHandle": cbor.encode(pk.get_key_handle()),
+                "keyHandle": cbor.encode(pk.get_ref()),
             }
         }
 

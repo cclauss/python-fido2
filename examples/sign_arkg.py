@@ -138,7 +138,11 @@ print("KEM public key", pk.kem_key)
 # Arbitrary bytestring used for info
 info = b"my-info-here"
 # Derived public key to verify with, and kh to send to Authenticator
-pk2, kh = pk.derive_public_key(info)
+pk2 = pk.derive_public_key(info)
+print("Derived public key", pk2)
+ref = pk2.get_ref()
+print("COSE Key ref for derived key", ref)
+kh = cbor.encode(ref)
 
 # Prepare a message to sign
 message = b"New message"
