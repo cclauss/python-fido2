@@ -60,6 +60,8 @@ create_options, state = server.register_begin(
 result = client.make_credential(
     {
         **create_options["publicKey"],
+        # This extension isn't needed, but can be used to verify that the created
+        # credential uses resident key
         "extensions": {"credProps": True},
     }
 )
@@ -76,6 +78,8 @@ print("CLIENT DATA:", result.client_data)
 print("ATTESTATION OBJECT:", result.attestation_object)
 print()
 print("CREDENTIAL DATA:", auth_data.credential_data)
+print()
+print("Credential Properties:", result.extension_results.get("credProps"))
 
 # credProps:
 cred_props = result.extension_results.get("credProps")
