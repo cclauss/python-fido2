@@ -34,7 +34,7 @@ from fido2 import cbor
 from fido2.hid import CtapHidDevice
 from fido2.server import Fido2Server
 from fido2.client import Fido2Client, WindowsClient, UserInteraction
-from fido2.utils import sha256, websafe_encode
+from fido2.utils import sha256, websafe_encode, websafe_decode
 from fido2.cose import CoseKey, ES256
 from getpass import getpass
 import ctypes
@@ -128,14 +128,16 @@ if not sign_key:
     sys.exit(1)
 print("New credential created, with the sign extension.")
 
-pk = CoseKey.parse(cbor.decode(sign_key["publicKey"]))  # COSE key in bytes
+pk = CoseKey.parse(
+    cbor.decode(websafe_decode(sign_key["publicKey"]))
+)  # COSE key in bytes
 kh = sign_key["keyHandle"]  # key handle in bytes
 signature = sign_result.get("signature")
 print("public key", pk)
-print("keyHandle", kh.hex())
+print("keyHandle", kh)
 
-print("Test verify signature", signature.hex())
-pk.verify(message, signature)
+print("Test verify signature", signature)
+pk.verify(message, websafe_decode(signature))
 print("Signature verified!")
 
 message = b"New message"
@@ -168,7 +170,7 @@ sign_result = result.extension_results["sign"]
 print("GET sign result", sign_result)
 
 signature = sign_result.get("signature")
+print("Test verify signature", signature)
 
-print("Test verify signature", signature.hex())
-pk.verify(message, signature)
+pk.verify(message, websafe_decode(signature))
 print("Signature verified!")
