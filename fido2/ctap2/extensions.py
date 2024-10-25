@@ -540,7 +540,7 @@ class SignExtension(Ctap2Extension):
         kh = by_creds[websafe_encode(self._selected.id)]
 
         return {
-            0: sign.phData,
+            0: sign.ph_data,
             5: [kh],
         }
 
