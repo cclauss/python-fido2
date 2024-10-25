@@ -34,7 +34,7 @@ from fido2 import cbor
 from fido2.hid import CtapHidDevice
 from fido2.server import Fido2Server
 from fido2.client import Fido2Client, WindowsClient, UserInteraction
-from fido2.utils import sha256, websafe_encode
+from fido2.utils import sha256, websafe_encode, websafe_decode
 from fido2.cose import CoseKey
 from fido2.arkg import ARKG_P256ADD_ECDH
 from getpass import getpass
@@ -125,10 +125,12 @@ if not sign_key:
     sys.exit(1)
 
 # Extension output contains master public key and keyHandle
-pk = CoseKey.parse(cbor.decode(sign_key["publicKey"]))  # COSE key in bytes
+pk = CoseKey.parse(
+    cbor.decode(websafe_decode(sign_key["publicKey"]))
+)  # COSE key in bytes
 kh = sign_key["keyHandle"]  # key handle in bytes
 print("public key", pk)
-print("keyHandle from Authenticator", cbor.decode(kh))
+print("keyHandle from Authenticator", cbor.decode(websafe_decode(kh)))
 
 # Master public key contains blinding and KEM keys
 # ARKG derive_public_key uses these
@@ -142,7 +144,7 @@ pk2 = pk.derive_public_key(info)
 print("Derived public key", pk2)
 ref = pk2.get_ref()
 print("COSE Key ref for derived key", ref)
-kh = cbor.encode(ref)
+kh = websafe_encode(cbor.encode(ref))
 
 # Prepare a message to sign
 message = b"New message"
@@ -178,6 +180,6 @@ print("GET sign result", sign_result)
 # Response contains a signature over message
 signature = sign_result.get("signature")
 
-print("Test verify signature", signature.hex())
-pk2.verify(message, signature)
+print("Test verify signature", signature)
+pk2.verify(message, websafe_decode(signature))
 print("Signature verified with derived public key!")

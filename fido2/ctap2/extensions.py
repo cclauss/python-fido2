@@ -495,7 +495,7 @@ class SignExtension(Ctap2Extension):
         )
         outputs = {3: gk.algorithms, 4: flags}
 
-        if gk.pd_data:
+        if gk.ph_data:
             outputs[0] = gk.ph_data
 
         return outputs
