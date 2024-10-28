@@ -34,7 +34,7 @@ from fido2 import cbor
 from fido2.hid import CtapHidDevice
 from fido2.server import Fido2Server
 from fido2.client import Fido2Client, WindowsClient, UserInteraction
-from fido2.utils import sha256, websafe_encode, websafe_decode
+from fido2.utils import sha256, websafe_encode
 from fido2.cose import CoseKey, ES256
 from getpass import getpass
 import ctypes
@@ -122,22 +122,19 @@ credentials = [auth_data.credential_data]
 # PRF result:
 sign_result = result.extension_results.get("sign")
 print("CREATE sign result", sign_result)
-sign_key = sign_result.get("generatedKey")
+sign_key = sign_result.generated_key
 if not sign_key:
     print("Failed to create credential with sign extension", result.extension_results)
     sys.exit(1)
 print("New credential created, with the sign extension.")
 
-pk = CoseKey.parse(
-    cbor.decode(websafe_decode(sign_key["publicKey"]))
-)  # COSE key in bytes
-kh = sign_key["keyHandle"]  # key handle in bytes
-signature = sign_result.get("signature")
+pk = CoseKey.parse(cbor.decode(sign_key.public_key))  # COSE key in bytes
+kh = sign_key.key_handle  # key handle in bytes
 print("public key", pk)
-print("keyHandle", kh)
+print("keyHandle", sign_key["keyHandle"])
 
-print("Test verify signature", signature)
-pk.verify(message, websafe_decode(signature))
+print("Test verify signature", sign_result["signature"])
+pk.verify(message, sign_result.signature)
 print("Signature verified!")
 
 message = b"New message"
@@ -169,8 +166,7 @@ result = result.get_response(0)
 sign_result = result.extension_results["sign"]
 print("GET sign result", sign_result)
 
-signature = sign_result.get("signature")
-print("Test verify signature", signature)
+print("Test verify signature", sign_result.get("signature"))
 
-pk.verify(message, websafe_decode(signature))
+pk.verify(message, sign_result.signature)
 print("Signature verified!")
