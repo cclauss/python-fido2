@@ -120,7 +120,7 @@ auth_data = server.register_complete(
 credentials = [auth_data.credential_data]
 
 # PRF result:
-sign_result = result.extension_results.get("sign")
+sign_result = result.extension_results.sign
 print("CREATE sign result", sign_result)
 sign_key = sign_result.generated_key
 if not sign_key:
@@ -163,7 +163,7 @@ result = client.get_assertion(
 # Only one cred in allowCredentials, only one response.
 result = result.get_response(0)
 
-sign_result = result.extension_results["sign"]
+sign_result = result.extension_results.sign
 print("GET sign result", sign_result)
 
 print("Test verify signature", sign_result.get("signature"))
