@@ -32,10 +32,9 @@ from cryptography.hazmat.primitives.hashes import SHA256, Hash, HashAlgorithm
 from cryptography.hazmat.primitives.hmac import HMAC
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from fastecdsa.curve import Curve, P256
-from fastecdsa.encoding.sec1 import SEC1Encoder
-from fastecdsa.point import Point
-import fastecdsa.keys
+from ecdsa.curves import Curve, NIST256p
+from ecdsa.ellipticcurve import Point
+from ecdsa import SigningKey
 
 from dataclasses import dataclass
 from typing import Tuple, Sequence
@@ -187,11 +186,11 @@ class BL:
             pk_tau = pk + tau' * G
         """
         dst = b"ARKG-BL-EC." + self.DST_ext + info
-        htf = HTF(dst, self.crv.q, 48, self.Hash())
+        htf = HTF(dst, self.crv.order, 48, self.Hash())
 
         tau_prime = htf.hash_to_field(tau, 1)[0]
 
-        pk_tau = pk + (tau_prime * self.crv.G)
+        pk_tau = pk + (tau_prime * self.crv.generator)
         return pk_tau
 
 
@@ -201,14 +200,14 @@ class KEM:
     Hash: HashAlgorithm
     DST_ext: bytes
 
-    def sub_kem_generate(self) -> Tuple[int, Point]:
+    def sub_kem_generate(self) -> Tuple[Point, int]:
         """
         Sub-Kem-Generate-Keypair() -> (pk, sk)
 
             Generate (pk, sk) using some procedure defined for crv.
         """
-        sk, pk = fastecdsa.keys.gen_keypair(self.crv)
-        return pk, sk
+        sk = SigningKey.generate(NIST256p)
+        return sk.verifying_key.pubkey.point, sk.privkey.secret_multiplier
 
     def sub_kem_encaps(self, pk: Point, info: bytes) -> Tuple[bytes, bytes]:
         """
@@ -228,8 +227,8 @@ class KEM:
         """
         pk_prime, sk_prime = self.sub_kem_generate()
         # TODO: Don't hardcode length
-        k = int2bytes((pk * sk_prime).x, 32)
-        c = SEC1Encoder().encode_public_key(pk_prime, compressed=False)
+        k = int2bytes((pk * sk_prime).x(), 32)
+        c = pk_prime.to_bytes("uncompressed")
 
         return k, c
 
@@ -360,7 +359,7 @@ The identifier ARKG-P256ADD-ECDH represents the following ARKG instance:
 
 
 def _cose2point(cose):
-    return SEC1Encoder.decode_public_key(b"\x04" + cose[-2] + cose[-3], P256)
+    return Point(NIST256p.curve, bytes2int(cose[-2]), bytes2int(cose[-3]))
 
 
 class ARKG_P256_DERIVED(ES256):
@@ -383,8 +382,8 @@ class ARKG_P256_DERIVED(ES256):
 class ARKG_P256ADD_ECDH(CoseKey):
     ALGORITHM = -65539
     _ARKG = ARKG(
-        bl=BL(crv=P256, Hash=SHA256, DST_ext=b"ARKG-P256ADD-ECDH"),
-        kem=KEM(crv=P256, Hash=SHA256, DST_ext=b"ARKG-P256ADD-ECDH"),
+        bl=BL(crv=NIST256p, Hash=SHA256, DST_ext=b"ARKG-P256ADD-ECDH"),
+        kem=KEM(crv=NIST256p, Hash=SHA256, DST_ext=b"ARKG-P256ADD-ECDH"),
     )
 
     @property
