@@ -43,6 +43,7 @@ import sys
 
 try:
     from fido2.pcsc import CtapPcscDevice
+    from smartcard.Exceptions import CardConnectionException
 except ImportError:
     CtapPcscDevice = None
 
@@ -70,6 +71,7 @@ class CliInteraction(UserInteraction):
 
 uv = "discouraged"
 rk = "discouraged"
+pcsc = False
 
 if WindowsClient.is_available() and not ctypes.windll.shell32.IsUserAnAdmin():
     # Use the Windows WebAuthn API if available, and we're not running as admin
@@ -83,6 +85,8 @@ else:
             user_interaction=CliInteraction(),
         )
         if "sign" in client.info.extensions:
+            if isinstance(dev, CtapPcscDevice):
+                pcsc = True
             break
     else:
         print("No Authenticator with the sign extension found!")
@@ -152,6 +156,32 @@ ph_data = sha256(message)
 
 # Prepare parameters for getAssertion
 request_options, state = server.authenticate_begin(credentials, user_verification=uv)
+
+
+# NFC devices need to be removed and replaced to again trigger UV
+if pcsc:
+    print("Remove the Authenticator from the NFC reader...")
+    while True:
+        try:
+            dev.get_atr()
+        except CardConnectionException:
+            dev.close()
+            break
+
+    print("Now place the Authenticator back on the reader...")
+    while True:
+        for dev in CtapPcscDevice.list_devices():
+            client = Fido2Client(
+                dev,
+                "https://example.com",
+                user_interaction=CliInteraction(),
+            )
+            if "sign" in client.info.extensions:
+                break
+        else:
+            continue
+        break
+
 
 # Authenticate the credential
 result = client.get_assertion(
