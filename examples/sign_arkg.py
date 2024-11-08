@@ -31,66 +31,17 @@ creates a new credential for it with the extension enabled, and uses it to
 derive two separate secrets.
 """
 from fido2 import cbor
-from fido2.hid import CtapHidDevice
 from fido2.server import Fido2Server
-from fido2.client import Fido2Client, WindowsClient, UserInteraction
 from fido2.utils import sha256, websafe_encode, websafe_decode
 from fido2.cose import CoseKey
 from fido2.arkg import ARKG_P256ADD_ECDH
-from getpass import getpass
-import ctypes
+from exampleutils import get_client
 import sys
 
-try:
-    from fido2.pcsc import CtapPcscDevice
-    from smartcard.Exceptions import CardConnectionException
-except ImportError:
-    CtapPcscDevice = None
-
-
-def enumerate_devices():
-    for dev in CtapHidDevice.list_devices():
-        yield dev
-    if CtapPcscDevice:
-        for dev in CtapPcscDevice.list_devices():
-            yield dev
-
-
-# Handle user interaction
-class CliInteraction(UserInteraction):
-    def prompt_up(self):
-        print("\nTouch your authenticator device now...\n")
-
-    def request_pin(self, permissions, rd_id):
-        return getpass("Enter PIN: ")
-
-    def request_uv(self, permissions, rd_id):
-        print("User Verification required.")
-        return True
-
-
 uv = "discouraged"
-rk = "discouraged"
-pcsc = False
 
-if WindowsClient.is_available() and not ctypes.windll.shell32.IsUserAnAdmin():
-    # Use the Windows WebAuthn API if available, and we're not running as admin
-    client = WindowsClient("https://example.com")
-else:
-    # Locate a device
-    for dev in enumerate_devices():
-        client = Fido2Client(
-            dev,
-            "https://example.com",
-            user_interaction=CliInteraction(),
-        )
-        if "sign" in client.info.extensions:
-            if isinstance(dev, CtapPcscDevice):
-                pcsc = True
-            break
-    else:
-        print("No Authenticator with the sign extension found!")
-        sys.exit(1)
+# Locate a suitable FIDO authenticator
+client = get_client(lambda client: "sign" in client.info.extensions)
 
 server = Fido2Server({"id": "example.com", "name": "Example RP"}, attestation="none")
 user = {"id": b"user_id", "name": "A. User"}
@@ -98,7 +49,7 @@ user = {"id": b"user_id", "name": "A. User"}
 # Prepare parameters for makeCredential
 create_options, state = server.register_begin(
     user,
-    resident_key_requirement=rk,
+    resident_key_requirement="discouraged",
     user_verification=uv,
     authenticator_attachment="cross-platform",
 )
@@ -156,31 +107,6 @@ ph_data = sha256(message)
 
 # Prepare parameters for getAssertion
 request_options, state = server.authenticate_begin(credentials, user_verification=uv)
-
-
-# NFC devices need to be removed and replaced to again trigger UV
-if pcsc:
-    print("Remove the Authenticator from the NFC reader...")
-    while True:
-        try:
-            dev.get_atr()
-        except CardConnectionException:
-            dev.close()
-            break
-
-    print("Now place the Authenticator back on the reader...")
-    while True:
-        for dev in CtapPcscDevice.list_devices():
-            client = Fido2Client(
-                dev,
-                "https://example.com",
-                user_interaction=CliInteraction(),
-            )
-            if "sign" in client.info.extensions:
-                break
-        else:
-            continue
-        break
 
 
 # Authenticate the credential
